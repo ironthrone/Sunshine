@@ -31,11 +31,26 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.content.ContextCompat;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataItem;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
 import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
@@ -63,6 +78,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
      * Handler message id for updating the time periodically in interactive mode.
      */
     private static final int MSG_UPDATE_TIME = 0;
+    private static final String TAG = SunshineWatchFace.class.getSimpleName();
 
     @Override
     public Engine onCreateEngine() {
@@ -89,7 +105,8 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         }
     }
 
-    private class Engine extends CanvasWatchFaceService.Engine {
+    private class Engine extends CanvasWatchFaceService.Engine implements GoogleApiClient.ConnectionCallbacks,
+            GoogleApiClient.OnConnectionFailedListener,DataApi.DataListener {
         private static final float TIME_TEXT_SIZE_IN_SP = 21;
         private static final float DATE_TEXT_SIZE_IN_SP = 18;
         final Handler mUpdateTimeHandler = new EngineHandler(this);
@@ -117,6 +134,9 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         private Bitmap mBackBitmap;
         private Calendar mCalendar;
         private SimpleDateFormat mDateFormat;
+        private GoogleApiClient mGoogleApiClient;
+        private int maxTemp;
+        private int minTemp;
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -142,11 +162,19 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
             mCalendar = new GregorianCalendar();
             mDateFormat = new SimpleDateFormat("EEE,MMM dd,yyyy");
+
+            mGoogleApiClient = new GoogleApiClient.Builder(SunshineWatchFace.this)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .addApi(Wearable.API)
+                    .build();
+            mGoogleApiClient.connect();
         }
 
         @Override
         public void onDestroy() {
             mUpdateTimeHandler.removeMessages(MSG_UPDATE_TIME);
+            mGoogleApiClient.disconnect();
             super.onDestroy();
         }
 
@@ -301,6 +329,12 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                 y += mTimePaint.descent() - mDatePaint.ascent();
                 canvas.drawText(mDateFormat.format(mCalendar.getTime()),x,y,mDatePaint);
 
+                if (maxTemp != 0 && minTemp != 0) {
+                    y += mDatePaint.descent() - mDatePaint.ascent();
+                    canvas.drawText(String.format(Locale.getDefault(),"%d %d",maxTemp,minute),
+                            x,y,mDatePaint);
+
+                }
             }
             // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
         }
@@ -334,6 +368,48 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                 long delayMs = INTERACTIVE_UPDATE_RATE_MS
                         - (timeMs % INTERACTIVE_UPDATE_RATE_MS);
                 mUpdateTimeHandler.sendEmptyMessageDelayed(MSG_UPDATE_TIME, delayMs);
+            }
+        }
+
+        @Override
+        public void onConnected(@Nullable Bundle bundle) {
+            Log.d(TAG, "googleapiclient connect");
+            requestWeatherData();
+        }
+
+        private void requestWeatherData(){
+            PutDataMapRequest putDataMapRequest = PutDataMapRequest.create("/update");
+            putDataMapRequest.getDataMap().putBoolean("update",true);
+            PutDataRequest putDataRequest = putDataMapRequest.asPutDataRequest();
+            putDataRequest.setUrgent();
+            Wearable.DataApi.putDataItem(mGoogleApiClient, putDataRequest);
+
+        }
+        @Override
+        public void onConnectionSuspended(int i) {
+            Log.d(TAG, "googleapiclient connect suspended");
+
+        }
+
+        @Override
+        public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+            Log.d(TAG, "googleapiclient failed");
+
+        }
+
+        @Override
+        public void onDataChanged(DataEventBuffer dataEventBuffer) {
+            for (DataEvent dataEvent : dataEventBuffer) {
+                if (dataEvent.getType() == DataEvent.TYPE_CHANGED ) {
+                    DataItem dataItem = dataEvent.getDataItem();
+                    if (dataItem.getUri().getPath().compareTo("/send") == 0) {
+
+                    DataMap dataMap = DataMapItem.fromDataItem(dataItem).getDataMap();
+                        maxTemp = dataMap.getInt("max");
+                        minTemp = dataMap.getInt("min");
+                        invalidate();
+                    }
+                }
             }
         }
     }
