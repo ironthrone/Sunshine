@@ -41,7 +41,9 @@ import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
 import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEvent;
 import com.google.android.gms.wearable.DataEventBuffer;
@@ -52,6 +54,7 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 
+import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -137,6 +140,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         private GoogleApiClient mGoogleApiClient;
         private int maxTemp;
         private int minTemp;
+        private Bitmap mWeatherIcon;
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -335,6 +339,10 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                             x,y,mDatePaint);
 
                 }
+                if(mWeatherIcon != null){
+                    y += mDatePaint.descent() - mDatePaint.ascent();
+                    canvas.drawBitmap(mWeatherIcon,x,y,null);
+                }
             }
             // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
         }
@@ -374,6 +382,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         @Override
         public void onConnected(@Nullable Bundle bundle) {
             Log.d(TAG, "googleapiclient connect");
+            Wearable.DataApi.addListener(mGoogleApiClient,this);
             requestWeatherData();
         }
 
@@ -394,19 +403,31 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         @Override
         public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
             Log.d(TAG, "googleapiclient failed");
+//            Log.d(TAG, GoogleApiAvailability.getInstance().getErrorString(connectionResult.getErrorCode()));
+
+            GoogleApiAvailability.getInstance().showErrorNotification(SunshineWatchFace.this,connectionResult);
 
         }
 
         @Override
         public void onDataChanged(DataEventBuffer dataEventBuffer) {
+            Log.d(TAG, "onDataChanged");
+
             for (DataEvent dataEvent : dataEventBuffer) {
                 if (dataEvent.getType() == DataEvent.TYPE_CHANGED ) {
                     DataItem dataItem = dataEvent.getDataItem();
                     if (dataItem.getUri().getPath().compareTo("/send") == 0) {
+                        Log.d(TAG, "onDataChanged receive /send");
 
                     DataMap dataMap = DataMapItem.fromDataItem(dataItem).getDataMap();
                         maxTemp = dataMap.getInt("max");
                         minTemp = dataMap.getInt("min");
+                        Asset asset = dataMap.getAsset("icon");
+                        if(asset != null){
+                            InputStream assetInputStream = Wearable.DataApi.getFdForAsset(mGoogleApiClient, asset).await().getInputStream();
+                            mWeatherIcon = BitmapFactory.decodeStream(assetInputStream);
+
+                        }
                         invalidate();
                     }
                 }

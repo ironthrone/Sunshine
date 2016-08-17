@@ -15,21 +15,41 @@
  */
 package com.example.android.sunshine.app;
 
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.preference.PreferenceManager;
 import android.text.format.Time;
+import android.util.Log;
 
+import com.bumptech.glide.Glide;
+import com.example.android.sunshine.app.data.WeatherContract;
 import com.example.android.sunshine.app.sync.SunshineSyncAdapter;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.wearable.Asset;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
+import java.io.ByteArrayOutputStream;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.ExecutionException;
+
+import static com.example.android.sunshine.app.data.WeatherDataService.ICON_KEY;
+import static com.example.android.sunshine.app.data.WeatherDataService.MAX_TEMP_KEY;
+import static com.example.android.sunshine.app.data.WeatherDataService.MIN_TEMP_KEY;
+import static com.example.android.sunshine.app.data.WeatherDataService.SEND_WEATHER_PATH;
 
 public class Utility {
+    private static final String TAG = Utility.class.getSimpleName();
+
     public static String getPreferredLocation(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         return prefs.getString(context.getString(R.string.pref_location_key),
@@ -575,4 +595,52 @@ public class Utility {
         spe.putInt(c.getString(R.string.pref_location_status_key), SunshineSyncAdapter.LOCATION_STATUS_UNKNOWN);
         spe.apply();
     }
+
+    public static void sendWeatehrData(Context context,GoogleApiClient googleApiClient){
+        ContentResolver resolver = context.getContentResolver();
+        String[] projection = {
+                WeatherContract.WeatherEntry.COLUMN_MAX_TEMP,
+                WeatherContract.WeatherEntry.COLUMN_MIN_TEMP,
+                WeatherContract.WeatherEntry.COLUMN_WEATHER_ID
+
+        };
+        String locationSetting = Utility.getPreferredLocation(context);
+        Cursor cursor = resolver.query(WeatherContract.WeatherEntry.buildWeatherLocationWithDate(locationSetting, System.currentTimeMillis()),
+                projection,null,null,null);
+        if(cursor != null && cursor.moveToFirst()){
+            int max = cursor.getInt(cursor.getColumnIndex(WeatherContract.WeatherEntry.COLUMN_MAX_TEMP));
+            int min = cursor.getInt(cursor.getColumnIndex(WeatherContract.WeatherEntry.COLUMN_MIN_TEMP));
+
+            int weatherId = cursor.getInt(cursor.getColumnIndex(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID));
+            PutDataMapRequest putDataMapRequest = PutDataMapRequest.create(SEND_WEATHER_PATH);
+            putDataMapRequest.getDataMap().putInt(MAX_TEMP_KEY,max);
+            putDataMapRequest.getDataMap().putInt(MIN_TEMP_KEY, min);
+            Bitmap icon = null;
+            try {
+
+                icon = Glide.with(context)
+                        .load(Utility.getArtUrlForWeatherCondition(context, weatherId))
+                        .asBitmap()
+                        .into(100,100)
+                        .get();
+            }catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (ExecutionException e) {
+                e.printStackTrace();
+            }
+            if (icon != null) {
+
+                ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                icon.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream);
+                Asset asset = Asset.createFromBytes(byteArrayOutputStream.toByteArray());
+                putDataMapRequest.getDataMap().putAsset(ICON_KEY,asset);
+            }
+            PutDataRequest putDataReq = putDataMapRequest.asPutDataRequest();
+            putDataReq.setUrgent();
+            Wearable.DataApi.putDataItem(googleApiClient, putDataReq);
+        }else {
+            Log.d(TAG, "cursor is null or empty");
+        }
+    }
+
 }
