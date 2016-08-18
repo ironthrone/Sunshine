@@ -359,7 +359,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             Log.d(LOG_TAG, "Sync Complete. " + cVVector.size() + " Inserted");
             setLocationStatus(getContext(), LOCATION_STATUS_OK);
             if(mGoogleApiClient.isConnected()){
-
+                Log.d(TAG, "send data to wearable");
             Utility.sendWeatehrData(getContext(),mGoogleApiClient);
             }else {
                 Log.d(TAG, "google api client not connect");

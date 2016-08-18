@@ -36,6 +36,7 @@ import android.support.annotation.Nullable;
 import android.support.v4.content.ContextCompat;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
@@ -43,6 +44,7 @@ import android.view.WindowInsets;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEvent;
@@ -101,6 +103,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             if (engine != null) {
                 switch (msg.what) {
                     case MSG_UPDATE_TIME:
+
                         engine.handleUpdateTimeMessage();
                         break;
                 }
@@ -114,7 +117,6 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         private static final float DATE_TEXT_SIZE_IN_SP = 18;
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
-//        Paint mBackgroundPaint;
         Paint mTimePaint;
         Paint mDatePaint;
         final BroadcastReceiver mTimeZoneReceiver = new BroadcastReceiver() {
@@ -141,6 +143,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         private int maxTemp;
         private int minTemp;
         private Bitmap mWeatherIcon;
+        private DisplayMetrics mDisplayMetrics;
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -165,7 +168,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             mDatePaint = createDatePaint(resources.getColor(R.color.gray_white));
 
             mCalendar = new GregorianCalendar();
-            mDateFormat = new SimpleDateFormat("EEE,MMM dd,yyyy");
+            mDateFormat = new SimpleDateFormat("MMM dd, yyyy");
 
             mGoogleApiClient = new GoogleApiClient.Builder(SunshineWatchFace.this)
                     .addConnectionCallbacks(this)
@@ -173,6 +176,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                     .addApi(Wearable.API)
                     .build();
             mGoogleApiClient.connect();
+            mDisplayMetrics = MetricsUtil.getDisplayMetrics(SunshineWatchFace.this);
         }
 
         @Override
@@ -185,14 +189,14 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         private Paint createTimePaint(int textColor) {
             Paint paint = new Paint();
             paint.setColor(textColor);
-            paint.setTextSize(DpUtil.sp2px(SunshineWatchFace.this,TIME_TEXT_SIZE_IN_SP));
+            paint.setTextSize(MetricsUtil.sp2px(SunshineWatchFace.this,TIME_TEXT_SIZE_IN_SP));
             paint.setAntiAlias(true);
             return paint;
         }
         private Paint createDatePaint(int textColor) {
             Paint paint = new Paint();
             paint.setColor(textColor);
-            paint.setTextSize(DpUtil.sp2px(SunshineWatchFace.this,DATE_TEXT_SIZE_IN_SP));
+            paint.setTextSize(MetricsUtil.sp2px(SunshineWatchFace.this,DATE_TEXT_SIZE_IN_SP));
             paint.setAntiAlias(true);
             return paint;
         }
@@ -313,33 +317,47 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             int hour = mCalendar.get(Calendar.HOUR_OF_DAY);
             int minute = mCalendar.get(Calendar.MINUTE);
             int second = mCalendar.get(Calendar.SECOND);
+
+            int x;
+            int y;
+            String time;
             if (isInAmbientMode()) {
+                time = String.format(Locale.getDefault(), "%d:%02d", hour, minute);
+                x = (int) (mDisplayMetrics.widthPixels / 2 - mTimePaint.measureText(time) / 2);
+                y = (int) (mDisplayMetrics.heightPixels / 2 - mTimePaint.descent() + mTimePaint.ascent());
                 canvas.drawColor(Color.BLACK);
-                canvas.drawText(String.format(Locale.getDefault(),"%d:%02d",hour,minute),
-                        mXOffset,mYOffset, mTimePaint);
+                canvas.drawText(time,
+                        x,y, mTimePaint);
             } else {
-//                canvas.drawBitmap(mBackBitmap,0,0,null );
                 canvas.drawColor(ContextCompat.getColor(SunshineWatchFace.this,R.color.primary));
+canvas.drawLine(mDisplayMetrics.widthPixels / 4,mDisplayMetrics.heightPixels/2 + 1,
+        mDisplayMetrics.widthPixels * 3 / 4,mDisplayMetrics.heightPixels /2 - 1,mTimePaint);
 
-
-//                canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
-//                canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
-
-                float x = mXOffset;
-                float y = mYOffset;
-                canvas.drawText(String.format(Locale.getDefault(), "%d:%02d:%02d",hour ,minute
+                time = String.format(Locale.getDefault(), "%d:%02d:%02d", hour, minute
                         , second
-                        ),x,y,mTimePaint);
-                y += mTimePaint.descent() - mDatePaint.ascent();
-                canvas.drawText(mDateFormat.format(mCalendar.getTime()),x,y,mDatePaint);
+                );
+                String date = mDateFormat.format(mCalendar.getTime());
+
+                x = (int) (mDisplayMetrics.widthPixels / 2 - mDatePaint.measureText(date) / 2);
+                y = (int) (mDisplayMetrics.heightPixels / 2 - mDatePaint.descent() );
+
+                canvas.drawText(date,x,y,mDatePaint);
+
+                x = (int) (mDisplayMetrics.widthPixels / 2 - mTimePaint.measureText(time) / 2);
+                y -= mTimePaint.descent() - mTimePaint.ascent();
+                canvas.drawText(time,x,y,mTimePaint);
+
 
                 if (maxTemp != 0 && minTemp != 0) {
-                    y += mDatePaint.descent() - mDatePaint.ascent();
-                    canvas.drawText(String.format(Locale.getDefault(),"%d %d",maxTemp,minute),
+                String temperature = String.format(Locale.getDefault(), "%d %d", maxTemp, minute);
+                x = (int) (mDisplayMetrics.widthPixels / 2 - mDatePaint.measureText(temperature) / 2);
+                y = mDisplayMetrics.heightPixels / 2;
+                    canvas.drawText(temperature,
                             x,y,mDatePaint);
 
                 }
                 if(mWeatherIcon != null){
+                    x = mDisplayMetrics.widthPixels / 2 - mWeatherIcon.getWidth() / 2;
                     y += mDatePaint.descent() - mDatePaint.ascent();
                     canvas.drawBitmap(mWeatherIcon,x,y,null);
                 }
@@ -391,7 +409,17 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             putDataMapRequest.getDataMap().putBoolean("update",true);
             PutDataRequest putDataRequest = putDataMapRequest.asPutDataRequest();
             putDataRequest.setUrgent();
-            Wearable.DataApi.putDataItem(mGoogleApiClient, putDataRequest);
+            Wearable.DataApi.putDataItem(mGoogleApiClient, putDataRequest)
+                    .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+                        @Override
+                        public void onResult(@NonNull DataApi.DataItemResult dataItemResult) {
+                            if (dataItemResult.getStatus().isSuccess()) {
+                                Log.d(TAG, "send request for weather data success");
+                            }else {
+                                Log.d(TAG, "send request for weather data fail");
+                            }
+                        }
+                    });
 
         }
         @Override

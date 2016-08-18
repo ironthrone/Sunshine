@@ -8,9 +8,9 @@ import android.util.TypedValue;
 /**
  *
  */
-public class DpUtil {
+public class MetricsUtil {
 
-	private static  DisplayMetrics getDisplayMetrics(Context context){
+	public static  DisplayMetrics getDisplayMetrics(Context context){
 		return context.getResources().getDisplayMetrics();
 	}
 	public static float px2dp(Context context,float pxValue) {
